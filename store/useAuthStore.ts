@@ -42,6 +42,7 @@ interface AuthState {
   doctor: Doctor | null;
   setRole: (role: Role | null) => void;
   loginPatient: (patient: Patient) => void;
+  updatePatientProfile: (updated: Partial<Patient>) => void;
   loginDoctor: (doctor: Doctor) => void;
   logout: () => void;
 }
@@ -54,6 +55,9 @@ export const useAuthStore = create<AuthState>()(
       doctor: null,
       setRole: (role) => set({ role }),
       loginPatient: (patient) => set({ patient, role: 'patient' }),
+      updatePatientProfile: (updated) => set((state) => ({
+        patient: state.patient ? { ...state.patient, ...updated } : null
+      })),
       loginDoctor: (doctor) => set({ doctor, role: 'doctor' }),
       logout: () => set({ role: null, patient: null, doctor: null }),
     }),

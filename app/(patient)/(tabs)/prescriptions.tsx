@@ -1,24 +1,90 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/Theme';
 import { useAuthStore } from '../../../store/useAuthStore';
-import { FileText } from 'lucide-react-native';
+import { PatientService } from '../../../lib/services/patient';
+import { SHARED_DB } from '../../../lib/services/sharedDb';
+import { supabase } from '../../../lib/supabase';
 
 export default function PrescriptionsScreen() {
-  const { patient } = useAuthStore();
+  const { patient, updatePatientProfile } = useAuthStore();
+  const [prescriptions, setPrescriptions] = useState<any[]>(patient?.prescriptions || []);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchLatestPrescriptions = async () => {
+    if (!patient?.id) return;
+    try {
+      const freshData = await PatientService.getPatientData(patient.id);
+      if (freshData && freshData.prescriptions) {
+        setPrescriptions(freshData.prescriptions);
+        updatePatientProfile({ prescriptions: freshData.prescriptions });
+      }
+    } catch (e) {
+      console.error('Failed to refresh prescriptions:', e);
+    }
+  };
+
+  // Re-fetch every time user switches to this tab
+  useFocusEffect(
+    useCallback(() => {
+      fetchLatestPrescriptions();
+    }, [patient?.id])
+  );
+
+  // Real-time listener for prescriptions added by doctor
+  useEffect(() => {
+    if (!patient?.id) return;
+
+    const unsubShared = SHARED_DB.subscribe(() => {
+      fetchLatestPrescriptions();
+    });
+
+    const channel = supabase
+      .channel(`patient_prescriptions_${patient.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'patients', filter: `id=eq.${patient.id}` },
+        payload => {
+          if (payload.new && (payload.new as any).prescriptions) {
+            setPrescriptions((payload.new as any).prescriptions);
+            updatePatientProfile({ prescriptions: (payload.new as any).prescriptions });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      unsubShared();
+      supabase.removeChannel(channel);
+    };
+  }, [patient?.id]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchLatestPrescriptions();
+    setRefreshing(false);
+  };
 
   if (!patient) return null;
 
+  const currentScripts = prescriptions.filter(p => p.is_current);
+  const pastScripts = prescriptions.filter(p => !p.is_current);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+    >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Prescriptions</Text>
         <Text style={styles.headerSubtitle}>Medications prescribed by doctors</Text>
       </View>
 
       <Text style={styles.sectionTitle}>Current</Text>
-      {patient.prescriptions && patient.prescriptions.filter(p => p.is_current).length > 0 ? (
-        patient.prescriptions.filter(p => p.is_current).map((script, i) => {
+      {currentScripts.length > 0 ? (
+        currentScripts.map((script, i) => {
           const meds = script.medicines || (script.name ? [{ name: script.name, dosage: script.dosage }] : []);
           return (
             <View key={`curr-${i}`} style={styles.card}>
@@ -40,8 +106,8 @@ export default function PrescriptionsScreen() {
       )}
 
       <Text style={[styles.sectionTitle, { marginTop: Spacing.xl }]}>Past</Text>
-      {patient.prescriptions && patient.prescriptions.filter(p => !p.is_current).length > 0 ? (
-        patient.prescriptions.filter(p => !p.is_current).map((script, i) => {
+      {pastScripts.length > 0 ? (
+        pastScripts.map((script, i) => {
           const meds = script.medicines || (script.name ? [{ name: script.name, dosage: script.dosage }] : []);
           return (
             <View key={`past-${i}`} style={styles.card}>
@@ -127,14 +193,5 @@ const styles = StyleSheet.create({
   },
   meta: {
     ...Typography.metadata,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.xxxl,
-  },
-  emptyText: {
-    ...Typography.body,
-    color: Colors.textSecondary,
   },
 });

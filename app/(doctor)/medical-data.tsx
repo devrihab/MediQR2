@@ -1,8 +1,9 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Platform } from 'react-native';
+import React, { useState, useCallback, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Platform, RefreshControl } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/Theme';
 import { PatientService } from '../../lib/services/patient';
+import { SHARED_DB } from '../../lib/services/sharedDb';
 import { Patient } from '../../types';
 import { ShieldAlert, Info, Clock, Pill } from 'lucide-react-native';
 import { Badge } from '../../components/ui/Badge';
@@ -14,25 +15,40 @@ export default function MedicalDataScreen() {
   const router = useRouter();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const isLimited = limited === 'true';
 
+  const loadData = async () => {
+    try {
+      const data = await PatientService.getPatientData(patientId as string);
+      setPatient({ ...data });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
-      const loadData = async () => {
-        try {
-          const data = await PatientService.getPatientData(patientId as string);
-          setPatient(data);
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setLoading(false);
-        }
-      };
-      
       loadData();
     }, [patientId])
   );
+
+  // Live subscription: updates automatically when prescription is added
+  useEffect(() => {
+    const unsub = SHARED_DB.subscribe(() => {
+      loadData();
+    });
+    return () => unsub();
+  }, [patientId]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
   if (loading) {
     return (
@@ -51,7 +67,11 @@ export default function MedicalDataScreen() {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView 
+      style={styles.container} 
+      contentContainerStyle={styles.content}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+    >
       {isLimited && (
         <View style={styles.emergencyBanner}>
           <ShieldAlert color={Colors.white} size={24} />

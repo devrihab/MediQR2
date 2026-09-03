@@ -288,6 +288,8 @@ export const DoctorService = {
   },
 
   async addPrescription(patientId: string, doctorId: string, prescription: any): Promise<void> {
+    let updatedPrescriptions: any[] = [];
+
     try {
       if (isConfigured()) {
         const { data: p } = await supabase
@@ -296,20 +298,38 @@ export const DoctorService = {
           .eq('id', patientId)
           .single();
 
-        if (p) {
-          const updatedPrescriptions = [...(p.prescriptions || []), prescription];
-          await supabase
-            .from('patients')
-            .update({ prescriptions: updatedPrescriptions })
-            .eq('id', patientId);
-        }
-      }
-    } catch (e) {}
+        const currentList = Array.isArray(p?.prescriptions) ? p.prescriptions : [];
+        updatedPrescriptions = [...currentList, prescription];
 
+        await supabase
+          .from('patients')
+          .update({ 
+            prescriptions: updatedPrescriptions,
+            last_updated: new Date().toISOString()
+          })
+          .eq('id', patientId);
+
+        // Also add audit log
+        await supabase.from('audit_logs').insert({
+          patient_id: patientId,
+          doctor_id: doctorId,
+          type: 'add_prescription',
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (e) {
+      console.error('Supabase addPrescription error:', e);
+    }
+
+    // Update in-memory SHARED_DB
     const patient = SHARED_DB.getPatient(patientId);
     if (patient) {
-      patient.prescriptions = [...(patient.prescriptions || []), prescription];
-      SHARED_DB.notifyChange();
+      patient.prescriptions = updatedPrescriptions.length > 0 
+        ? updatedPrescriptions 
+        : [...(patient.prescriptions || []), prescription];
+      patient.last_updated = new Date().toISOString();
+      SHARED_DB.setPatient(patient);
     }
+    SHARED_DB.notifyChange();
   }
 };

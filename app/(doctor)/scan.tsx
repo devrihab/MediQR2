@@ -100,6 +100,32 @@ export default function ScanScreen() {
     router.push(`/(doctor)/access-request?patientId=${patientId}`);
   };
 
+  useEffect(() => {
+    let sub: any;
+    if (Platform.OS !== 'web') {
+      try {
+        sub = CameraView.onModernBarcodeScanned((result) => {
+          if (result && result.data) {
+            handleBarcodeScanned({ data: result.data, type: 'qr' } as any);
+          }
+        });
+      } catch (e) {}
+    }
+    return () => {
+      sub?.remove?.();
+    };
+  }, []);
+
+  const handleLaunchNativeScanner = async () => {
+    try {
+      if (Platform.OS !== 'web') {
+        await CameraView.launchScanner({ barcodeTypes: ['qr'] });
+      }
+    } catch (e) {
+      console.log('Native scanner error:', e);
+    }
+  };
+
   // Permission still loading
   if (!permission) {
     return (
@@ -153,32 +179,6 @@ export default function ScanScreen() {
       </View>
     );
   }
-
-  useEffect(() => {
-    let sub: any;
-    if (Platform.OS !== 'web') {
-      try {
-        sub = CameraView.onModernBarcodeScanned((result) => {
-          if (result && result.data) {
-            handleBarcodeScanned({ data: result.data, type: 'qr' } as any);
-          }
-        });
-      } catch (e) {}
-    }
-    return () => {
-      sub?.remove?.();
-    };
-  }, []);
-
-  const handleLaunchNativeScanner = async () => {
-    try {
-      if (Platform.OS !== 'web') {
-        await CameraView.launchScanner({ barcodeTypes: ['qr'] });
-      }
-    } catch (e) {
-      console.log('Native scanner error:', e);
-    }
-  };
 
   return (
     <View style={styles.container}>

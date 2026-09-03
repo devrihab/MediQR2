@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuthStore } from '../../store/useAuthStore';
 import { DoctorService } from '../../lib/services/doctor';
+import { DEMO_DOCTOR_ID } from '../../lib/services/sharedDb';
 import { Pill, Plus, Trash2 } from 'lucide-react-native';
 
 interface MedInput {
@@ -18,6 +19,7 @@ export default function AddPrescriptionScreen() {
   const { patientId } = useLocalSearchParams();
   const router = useRouter();
   const { doctor } = useAuthStore();
+  const effectiveDoctor = doctor || { id: DEMO_DOCTOR_ID, name: 'Dr. Sarah Adams' };
   
   const [medicines, setMedicines] = useState<MedInput[]>([{ name: '', dosage: '', frequency: '' }]);
   const [loading, setLoading] = useState(false);
@@ -25,29 +27,32 @@ export default function AddPrescriptionScreen() {
 
   const handleSave = async () => {
     // Validate
-    const hasEmpty = medicines.some(m => !m.name || !m.dosage || !m.frequency);
+    const hasEmpty = medicines.some(m => !m.name?.trim() || !m.dosage?.trim() || !m.frequency?.trim());
     if (hasEmpty) {
       setError('Please fill out all fields for every medicine');
       return;
     }
     
-    if (!doctor || !patientId) return;
+    if (!patientId) {
+      setError('Patient ID is missing');
+      return;
+    }
 
     setLoading(true);
     setError('');
 
     try {
       const formattedPrescription = {
-        prescribing_doctor: doctor.name,
+        prescribing_doctor: effectiveDoctor.name,
         date: new Date().toISOString().split('T')[0],
         is_current: true,
         medicines: medicines.map(m => ({
-          name: m.name,
-          dosage: `${m.dosage} (${m.frequency})`
+          name: m.name.trim(),
+          dosage: `${m.dosage.trim()} (${m.frequency.trim()})`
         }))
       };
 
-      await DoctorService.addPrescription(patientId as string, doctor.id, formattedPrescription);
+      await DoctorService.addPrescription(patientId as string, effectiveDoctor.id, formattedPrescription);
       
       if (Platform.OS !== 'web') {
         const Haptics = await import('expo-haptics');

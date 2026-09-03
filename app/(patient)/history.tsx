@@ -1,39 +1,53 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, Alert } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, Alert, RefreshControl } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/Theme';
 import { useAuthStore } from '../../store/useAuthStore';
 import { PatientService } from '../../lib/services/patient';
 import { AuditLog } from '../../types';
-import { AlertCircle, FileEdit, UserCheck, ShieldAlert, XCircle, Flag } from 'lucide-react-native';
+import { AlertCircle, FileEdit, UserCheck, ShieldAlert, XCircle, Flag, Pill } from 'lucide-react-native';
 import { Button } from '../../components/ui/Button';
 
 export default function HistoryScreen() {
   const { patient } = useAuthStore();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchLogs = async () => {
-    if (!patient) return;
+    if (!patient?.id) return;
     try {
       const data = await PatientService.getAccessHistory(patient.id);
-      setLogs(data);
+      setLogs(data || []);
     } catch (err) {
       console.error('Failed to fetch history', err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchLogs();
+    }, [patient?.id])
+  );
 
   useEffect(() => {
     fetchLogs();
     
-    if (patient) {
+    if (patient?.id) {
       const unsubscribe = PatientService.subscribeToHistory(patient.id, () => {
-        fetchLogs(); // Refetch on new event
+        fetchLogs();
       });
       return () => unsubscribe();
     }
-  }, [patient]);
+  }, [patient?.id]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchLogs();
+  };
 
   const handleReport = async (logId: string) => {
     Alert.alert(
@@ -57,7 +71,10 @@ export default function HistoryScreen() {
     );
   };
 
-  const renderIcon = (type: string) => {
+  const renderIcon = (type: string, reason?: string | null) => {
+    if (reason && reason.toLowerCase().includes('prescription')) {
+      return <Pill color={Colors.primary} size={24} />;
+    }
     switch (type) {
       case 'edit_data': return <FileEdit color={Colors.textSecondary} size={24} />;
       case 'normal_view': return <UserCheck color={Colors.success} size={24} />;
@@ -67,32 +84,53 @@ export default function HistoryScreen() {
     }
   };
 
+  const getLogTitle = (type: string, reason?: string | null) => {
+    if (reason && reason.toLowerCase().includes('prescription')) {
+      return reason;
+    }
+    switch (type) {
+      case 'emergency_view': return 'EMERGENCY ACCESS';
+      case 'normal_view': return 'Doctor Access Granted';
+      case 'edit_data': return 'Medical Data Updated';
+      case 'request_expired': return 'Request Expired';
+      default: return 'Activity Logged';
+    }
+  };
+
+  const getDoctorDisplay = (doctorId?: string | null) => {
+    if (!doctorId) return null;
+    if (doctorId.includes('22222') || doctorId === '22222222-2222-2222-2222-222222222222') {
+      return 'Dr. Sarah Adams';
+    }
+    return doctorId;
+  };
+
   const renderItem = ({ item }: { item: AuditLog }) => {
     const isEmergency = item.type === 'emergency_view';
     const date = new Date(item.timestamp).toLocaleString();
+    const docName = getDoctorDisplay(item.doctor_id);
     
     return (
       <View style={[styles.card, isEmergency && styles.emergencyCard]}>
         <View style={styles.cardHeader}>
           <View style={styles.titleRow}>
-            {renderIcon(item.type)}
+            {renderIcon(item.type, item.reason)}
             <Text style={[styles.title, isEmergency && { color: Colors.error }]}>
-              {item.type === 'emergency_view' ? 'EMERGENCY ACCESS' :
-               item.type === 'normal_view' ? 'Normal Access Granted' :
-               item.type === 'edit_data' ? 'Medical Data Updated' :
-               item.type === 'request_expired' ? 'Request Expired' : 'Activity Logged'}
+              {getLogTitle(item.type, item.reason)}
             </Text>
           </View>
           <Text style={styles.timestamp}>{date}</Text>
         </View>
 
-        {item.doctor_id && (
-          <Text style={styles.detailText}>Doctor: <Text style={styles.bold}>{item.doctor_id}</Text></Text>
+        {docName && (
+          <Text style={styles.detailText}>Doctor: <Text style={styles.bold}>{docName}</Text></Text>
         )}
 
-        {isEmergency && item.reason && (
+        {item.reason && !item.reason.toLowerCase().includes('prescription') && (
           <View style={styles.reasonBox}>
-            <Text style={styles.reasonLabel}>Clinical Justification:</Text>
+            <Text style={styles.reasonLabel}>
+              {isEmergency ? 'Clinical Justification:' : 'Details:'}
+            </Text>
             <Text style={styles.reasonText}>{item.reason}</Text>
           </View>
         )}
@@ -116,7 +154,7 @@ export default function HistoryScreen() {
     );
   };
 
-  if (loading) {
+  if (loading && logs.length === 0) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={Colors.primary} />
@@ -131,6 +169,7 @@ export default function HistoryScreen() {
         keyExtractor={item => item.id || Math.random().toString()}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
         ListEmptyComponent={
           <Text style={styles.emptyText}>No activity history found.</Text>
         }
@@ -144,27 +183,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
+  listContent: {
+    padding: Spacing.xl,
+  },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: Colors.background,
   },
-  listContent: {
-    padding: Spacing.xl,
-    gap: Spacing.md,
-  },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
+    marginBottom: Spacing.md,
     borderWidth: 1,
     borderColor: Colors.border,
   },
   emergencyCard: {
     borderColor: Colors.error,
-    borderWidth: 2,
-    backgroundColor: Colors.errorSurface,
+    borderLeftWidth: 4,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -177,62 +215,60 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
     flex: 1,
+    paddingRight: Spacing.sm,
   },
   title: {
-    ...Typography.h3,
+    ...Typography.bodyMedium,
     color: Colors.text,
+    fontWeight: '600',
     flexShrink: 1,
   },
   timestamp: {
     ...Typography.metadata,
-    color: Colors.textSecondary,
-    marginTop: 4,
+    color: Colors.textMuted,
   },
   detailText: {
-    ...Typography.body,
+    ...Typography.small,
     color: Colors.textSecondary,
-    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
   },
   bold: {
-    fontWeight: '600',
+    fontWeight: '700',
     color: Colors.text,
   },
   reasonBox: {
-    marginTop: Spacing.md,
     backgroundColor: Colors.background,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.error,
+    marginTop: Spacing.sm,
   },
   reasonLabel: {
-    ...Typography.smallMedium,
-    color: Colors.error,
+    ...Typography.metadata,
+    color: Colors.textSecondary,
     marginBottom: 2,
+    fontWeight: '600',
   },
   reasonText: {
     ...Typography.body,
     color: Colors.text,
   },
   reportSection: {
-    marginTop: Spacing.lg,
+    marginTop: Spacing.md,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,0,0,0.1)',
-    paddingTop: Spacing.md,
+    borderTopColor: Colors.border,
+    paddingTop: Spacing.sm,
   },
   reportBtn: {
-    height: 40,
-    minHeight: 40,
+    marginTop: Spacing.xs,
   },
   reportedText: {
-    ...Typography.smallMedium,
+    ...Typography.small,
     color: Colors.error,
-    textAlign: 'center',
-    fontStyle: 'italic',
+    fontWeight: '600',
   },
   emptyText: {
     ...Typography.body,
-    color: Colors.textMuted,
+    color: Colors.textSecondary,
     textAlign: 'center',
     marginTop: Spacing.xxl,
   },

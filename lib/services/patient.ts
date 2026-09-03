@@ -312,12 +312,13 @@ export const PatientService = {
 
   subscribeToHistory(patientId: string, callback: () => void): () => void {
     const unsubShared = SHARED_DB.subscribe(callback);
+    const interval = setInterval(callback, 1500);
 
     let unsubSupabase = () => {};
     try {
       if (isConfigured()) {
         const channel = supabase.channel(`hist_${patientId}`)
-          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs', filter: `patient_id=eq.${patientId}` }, 
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, 
             () => callback()
           )
           .subscribe();
@@ -327,6 +328,7 @@ export const PatientService = {
 
     return () => {
       unsubShared();
+      clearInterval(interval);
       unsubSupabase();
     };
   },

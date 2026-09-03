@@ -313,7 +313,8 @@ export const DoctorService = {
         await supabase.from('audit_logs').insert({
           patient_id: patientId,
           doctor_id: doctorId,
-          type: 'add_prescription',
+          type: 'edit_data',
+          reason: 'Prescription added',
           timestamp: new Date().toISOString()
         });
       }

@@ -1,0 +1,7 @@
+2026-09-03 07:26:34.616 xcodebuild[25426:106852] Writing error result bundle to /var/folders/69/_vztm_jd24g3lnh1ndx_9m300000gp/T/ResultBundle_2026-03-09_07-26-0034.xcresult
+xcodebuild: error: Unable to find a destination matching the provided destination specifier:
+		{ id:00008140-00045CE03407001C }
+
+	Ineligible destinations for the "MediQR" scheme:
+		{ platform:iOS, arch:arm64e, id:00008140-00045CE03407001C, name:Rihab’s iPhone, error:iOS 26.5 is not installed. Please download and install the platform from Xcode > Settings > Components. }
+		{ platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device, error:iOS 26.5 is not installed. Please download and install the platform from Xcode > Settings > Components. }

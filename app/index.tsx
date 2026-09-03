@@ -5,7 +5,7 @@ export default function Index() {
   const { role, patient, doctor } = useAuthStore();
 
   if (role === 'patient' && patient) {
-    return <Redirect href="/(patient)/dashboard" />;
+    return <Redirect href={"/(patient)/(tabs)" as any} />;
   }
 
   if (role === 'doctor' && doctor) {

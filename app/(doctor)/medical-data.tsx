@@ -1,33 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Platform } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/Theme';
 import { PatientService } from '../../lib/services/patient';
 import { Patient } from '../../types';
-import { ShieldAlert, Info, Clock } from 'lucide-react-native';
+import { ShieldAlert, Info, Clock, Pill } from 'lucide-react-native';
 import { Badge } from '../../components/ui/Badge';
 import { Divider } from '../../components/ui/Divider';
+import { Button } from '../../components/ui/Button';
 
 export default function MedicalDataScreen() {
   const { patientId, limited } = useLocalSearchParams();
+  const router = useRouter();
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
 
   const isLimited = limited === 'true';
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const data = await PatientService.getPatientData(patientId as string);
-        setPatient(data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, [patientId]);
+  useFocusEffect(
+    useCallback(() => {
+      const loadData = async () => {
+        try {
+          const data = await PatientService.getPatientData(patientId as string);
+          setPatient(data);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      loadData();
+    }, [patientId])
+  );
 
   if (loading) {
     return (
@@ -55,8 +60,19 @@ export default function MedicalDataScreen() {
       )}
       
       <View style={styles.header}>
-        <Text style={styles.patientName}>{patient.name}</Text>
-        <Text style={styles.patientId}>ID: {patient.id}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.patientName}>{patient.name}</Text>
+          <Text style={styles.patientId}>ID: {patient.id}</Text>
+        </View>
+        {!isLimited && (
+          <Button 
+            title="Prescribe" 
+            onPress={() => router.push(`/(doctor)/add-prescription?patientId=${patient.id}`)}
+            icon={<Pill size={16} color={Colors.white} />}
+            style={styles.headerActionBtn}
+            textStyle={{ fontSize: 14 }}
+          />
+        )}
       </View>
 
       <View style={styles.section}>
@@ -92,7 +108,7 @@ export default function MedicalDataScreen() {
       {!isLimited && (
         <>
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>MEDICATIONS (CURRENT)</Text>
+            <Text style={styles.sectionTitle}>MEDICATIONS (SELF-REPORTED)</Text>
             {patient.medications && patient.medications.length > 0 ? patient.medications.map((medication, i) => (
               <View key={i} style={styles.listItem}>
                 <Text style={styles.listText}>{medication}</Text>
@@ -102,19 +118,46 @@ export default function MedicalDataScreen() {
           <Divider style={styles.divider} />
 
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>CURRENT PRESCRIPTIONS</Text>
+            {patient.prescriptions && patient.prescriptions.filter(p => p.is_current).length > 0 ? patient.prescriptions.filter(p => p.is_current).map((script, i) => {
+              const meds = script.medicines || (script.name ? [{ name: script.name, dosage: script.dosage }] : []);
+              return (
+                <View key={i} style={styles.prescriptionItem}>
+                  {meds.map((med: any, mIdx: number) => (
+                    <View key={mIdx} style={styles.prescriptionHeader}>
+                      <Text style={styles.prescriptionName}>{med.name}</Text>
+                      <Text style={styles.prescriptionDosage}>{med.dosage}</Text>
+                    </View>
+                  ))}
+                  <View style={styles.prescriptionFooter}>
+                    <Text style={styles.prescriptionMeta}>By {script.prescribing_doctor}</Text>
+                    <Text style={styles.prescriptionMeta}>{script.date}</Text>
+                  </View>
+                </View>
+              );
+            }) : <Text style={styles.emptyText}>No current prescriptions found</Text>}
+          </View>
+          <Divider style={styles.divider} />
+
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>PAST PRESCRIPTIONS</Text>
-            {patient.prescriptions && patient.prescriptions.length > 0 ? patient.prescriptions.map((script, i) => (
-              <View key={i} style={styles.prescriptionItem}>
-                <View style={styles.prescriptionHeader}>
-                  <Text style={styles.prescriptionName}>{script.name}</Text>
-                  <Text style={styles.prescriptionDosage}>{script.dosage}</Text>
+            {patient.prescriptions && patient.prescriptions.filter(p => !p.is_current).length > 0 ? patient.prescriptions.filter(p => !p.is_current).map((script, i) => {
+              const meds = script.medicines || (script.name ? [{ name: script.name, dosage: script.dosage }] : []);
+              return (
+                <View key={i} style={styles.prescriptionItem}>
+                  {meds.map((med: any, mIdx: number) => (
+                    <View key={mIdx} style={styles.prescriptionHeader}>
+                      <Text style={styles.prescriptionName}>{med.name}</Text>
+                      <Text style={styles.prescriptionDosage}>{med.dosage}</Text>
+                    </View>
+                  ))}
+                  <View style={styles.prescriptionFooter}>
+                    <Text style={styles.prescriptionMeta}>By {script.prescribing_doctor}</Text>
+                    <Text style={styles.prescriptionMeta}>{script.date}</Text>
+                  </View>
                 </View>
-                <View style={styles.prescriptionFooter}>
-                  <Text style={styles.prescriptionMeta}>By {script.prescribing_doctor}</Text>
-                  <Text style={styles.prescriptionMeta}>{script.date}</Text>
-                </View>
-              </View>
-            )) : <Text style={styles.emptyText}>No previous prescriptions found</Text>}
+              );
+            }) : <Text style={styles.emptyText}>No previous prescriptions found</Text>}
           </View>
           <Divider style={styles.divider} />
         </>
@@ -183,6 +226,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  headerActionBtn: {
+    paddingHorizontal: Spacing.md,
+    height: 36,
+    minHeight: 36,
+    borderRadius: BorderRadius.full,
   },
   patientName: {
     ...Typography.h1,

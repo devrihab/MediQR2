@@ -16,13 +16,13 @@ export default function AccessRequestScreen() {
   const { patientId, requestId } = useLocalSearchParams();
   const router = useRouter();
   const { doctor } = useAuthStore();
-  
+
   const [requestState, setRequestState] = useState<RequestState>('initial');
   const [activeRequest, setActiveRequest] = useState<AccessRequest | null>(null);
   const [otpInput, setOtpInput] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
   const [errorMsg, setErrorMsg] = useState('');
-  
+
   const appState = useRef(AppState.currentState);
 
   // Resume / AppState recovery
@@ -44,7 +44,7 @@ export default function AccessRequestScreen() {
   // Realtime subscription
   useEffect(() => {
     if (!activeRequest || (requestState !== 'waiting' && requestState !== 'sending')) return;
-    
+
     const unsubscribe = DoctorService.subscribeToRequest(activeRequest.id, (newStatus: AccessRequestStatus) => {
       if (newStatus === 'approved') setRequestState('approved');
       if (newStatus === 'expired') setRequestState('expired');
@@ -83,7 +83,7 @@ export default function AccessRequestScreen() {
 
   const handleClientTimeout = async () => {
     if (!doctor || !patientId || !activeRequest) return;
-    
+
     // Do not blindly set expired. Verify with backend.
     try {
       const req = await DoctorService.getRequest(activeRequest.id);
@@ -107,13 +107,13 @@ export default function AccessRequestScreen() {
     try {
       const req = await DoctorService.requestAccess(patientId as string, doctor.id);
       setActiveRequest(req);
-      
+
       // Calculate remaining visual time based on created_at
       const created = new Date(req.created_at).getTime();
       const now = new Date().getTime();
       const diff = Math.max(0, 60 - Math.floor((now - created) / 1000));
       setTimeLeft(diff);
-      
+
       setRequestState('waiting');
     } catch (e: any) {
       setErrorMsg('Failed to send request. Try again.');
@@ -125,7 +125,7 @@ export default function AccessRequestScreen() {
     if (!doctor || !activeRequest || !otpInput) return;
     setRequestState('verifying');
     setErrorMsg('');
-    
+
     try {
       const isValid = await DoctorService.verifyOTP(activeRequest.id, otpInput, doctor.id, patientId as string);
       if (isValid) {
@@ -166,7 +166,7 @@ export default function AccessRequestScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.content}>
           <Text style={styles.patientIdText}>Patient: {patientId}</Text>
-          
+
           {requestState === 'initial' && (
             <Animated.View entering={FadeInDown.duration(400).springify()} exiting={FadeOutUp.duration(300)} style={styles.stateContainer}>
               <View style={styles.iconCircle}>
@@ -176,11 +176,11 @@ export default function AccessRequestScreen() {
               <Text style={styles.subtitle}>
                 You must request authorization to view this patient's full medical profile.
               </Text>
-              <Button 
-                title="Request Access" 
-                onPress={handleRequestAccess} 
+              <Button
+                title="Request Access"
+                onPress={handleRequestAccess}
                 icon={<Send size={20} color={Colors.white} />}
-                style={styles.actionBtn} 
+                style={styles.actionBtn}
               />
             </Animated.View>
           )}
@@ -198,15 +198,15 @@ export default function AccessRequestScreen() {
                 <Text style={styles.timerText}>{formatTime(timeLeft)}</Text>
               </View>
               <View style={styles.progressBarContainer}>
-                 <Animated.View style={[styles.progressBarFill, { width: `${(timeLeft / 60) * 100}%` }]} />
+                <Animated.View style={[styles.progressBarFill, { width: `${(timeLeft / 60) * 100}%` }]} />
               </View>
               <Text style={styles.title}>Enter One-Time Code</Text>
               <Text style={styles.subtitle}>
                 An email has been sent to the patient. Enter the 5-digit code to proceed.
               </Text>
-              
+
               <Input
-                placeholder="XXXXX"
+                placeholder=""
                 value={otpInput}
                 onChangeText={setOtpInput}
                 keyboardType="number-pad"
@@ -214,21 +214,21 @@ export default function AccessRequestScreen() {
                 autoFocus
                 style={styles.otpInput}
               />
-              
+
               {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
-              
-              <Button 
-                title="Verify Code" 
-                onPress={handleVerifyOTP} 
+
+              <Button
+                title="Verify Code"
+                onPress={handleVerifyOTP}
                 disabled={otpInput.length < 5}
-                style={styles.actionBtn} 
+                style={styles.actionBtn}
               />
 
               <View style={[styles.emergencySection, { marginTop: Spacing.xl }]}>
                 <Text style={styles.emergencyLabel}>Patient Unresponsive?</Text>
-                <Button 
-                  title="Emergency Override" 
-                  onPress={handleEmergencyOverride} 
+                <Button
+                  title="Emergency Override"
+                  onPress={handleEmergencyOverride}
                   variant="ghost"
                   textStyle={{ color: Colors.error }}
                   style={{ width: '100%' }}
@@ -253,10 +253,10 @@ export default function AccessRequestScreen() {
               <Text style={styles.subtitle}>
                 You now have authorized access to this patient's medical records.
               </Text>
-              <Button 
-                title="View Medical File" 
+              <Button
+                title="View Medical File"
                 onPress={handleViewData}
-                style={styles.actionBtn} 
+                style={styles.actionBtn}
               />
             </Animated.View>
           )}
@@ -270,21 +270,21 @@ export default function AccessRequestScreen() {
               <Text style={styles.subtitle}>
                 The authorization request has timed out. Normal consent could not be verified.
               </Text>
-              
-              <Button 
-                title="Request Again" 
-                onPress={resetFlow} 
+
+              <Button
+                title="Request Again"
+                onPress={resetFlow}
                 variant="outline"
-                style={styles.actionBtn} 
+                style={styles.actionBtn}
               />
 
               <View style={styles.emergencySection}>
                 <Text style={styles.emergencyLabel}>Patient Unresponsive?</Text>
-                <Button 
-                  title="Emergency Override" 
-                  onPress={handleEmergencyOverride} 
+                <Button
+                  title="Emergency Override"
+                  onPress={handleEmergencyOverride}
                   variant="danger"
-                  style={styles.actionBtn} 
+                  style={styles.actionBtn}
                 />
               </View>
             </Animated.View>
@@ -374,12 +374,15 @@ const styles = StyleSheet.create({
   },
   otpInput: {
     width: '100%',
-    fontSize: 24,
+    fontSize: 22,
     textAlign: 'center',
+    justifyContent: 'center',
     letterSpacing: 8,
     marginBottom: Spacing.md,
+    marginTop: Spacing.md,
   },
   actionBtn: {
+    marginTop: 10,
     width: '100%',
     marginBottom: Spacing.md,
   },

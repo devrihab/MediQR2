@@ -1,0 +1,7 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -workspace /Users/wrovr/Documents/MediQR2/ios/MediQR.xcworkspace -configuration Debug -scheme MediQR -destination id=00008140-00045CE03407001C COCOAPODS_PARALLEL_CODE_SIGN=true COMPILER_INDEX_STORE_ENABLE=NO
+
+Build settings from command line:
+    COCOAPODS_PARALLEL_CODE_SIGN = true
+    COMPILER_INDEX_STORE_ENABLE = NO
+

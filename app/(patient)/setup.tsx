@@ -77,7 +77,7 @@ export default function SetupScreen() {
       
       const newPatient = await PatientService.createPatient(fullPatient);
       loginPatient(newPatient);
-      router.replace('/(patient)/dashboard');
+      router.replace('/(patient)/(tabs)' as any);
     } catch (err: any) {
       setServerError(err.message || 'Failed to setup profile');
     } finally {

@@ -24,6 +24,7 @@ export default function DoctorLayout() {
       <Stack.Screen name="access-request" options={{ title: 'Request Access', headerBackTitle: 'Back' }} />
       <Stack.Screen name="emergency-confirm" options={{ title: 'Emergency Override', headerBackTitle: 'Back' }} />
       <Stack.Screen name="medical-data" options={{ title: 'Patient File', headerBackTitle: 'Back' }} />
+      <Stack.Screen name="add-prescription" options={{ title: 'New Prescription', headerBackTitle: 'Back' }} />
     </Stack>
   );
 }

@@ -8,7 +8,8 @@
     "scheme": "mediqrtmp",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mediqr.app"
     },
     "android": {
       "package": "com.mediqr.app",

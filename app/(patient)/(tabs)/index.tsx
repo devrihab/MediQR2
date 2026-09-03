@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, Platform, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, Platform, Alert, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import QRCode from 'react-native-qrcode-svg';
-import { Colors, Typography, Spacing, BorderRadius } from '../../constants/Theme';
-import { useAuthStore } from '../../store/useAuthStore';
-import { PatientService } from '../../lib/services/patient';
-import { QR, AccessRequest } from '../../types';
-import { Button } from '../../components/ui/Button';
-import { ShieldCheck, History, Settings, LogOut, Activity, RefreshCw, Key } from 'lucide-react-native';
+import Constants from 'expo-constants';
+import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/Theme';
+import { useAuthStore } from '../../../store/useAuthStore';
+import { PatientService } from '../../../lib/services/patient';
+import { QR, AccessRequest } from '../../../types';
+import { Button } from '../../../components/ui/Button';
+import { ShieldCheck, History, Settings, LogOut, Activity, RefreshCw, Key, ExternalLink } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
 export default function PatientDashboard() {
@@ -83,8 +84,35 @@ export default function PatientDashboard() {
 
   if (!patient) return null;
 
+  const getPortalUrl = () => {
+    if (!patient) return '';
+    if (process.env.EXPO_PUBLIC_PORTAL_URL) {
+      return `${process.env.EXPO_PUBLIC_PORTAL_URL}/portal?patientId=${patient.id}`;
+    }
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}/portal?patientId=${patient.id}`;
+    }
+    const hostUri = Constants.expoConfig?.hostUri;
+    if (hostUri) {
+      const ip = hostUri.split(':')[0];
+      return `http://${ip}:8081/portal?patientId=${patient.id}`;
+    }
+    return `https://mediqr.app/portal?patientId=${patient.id}`;
+  };
+
+  const handleOpenPortal = () => {
+    const url = getPortalUrl();
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.open(url, '_blank');
+    } else {
+      Linking.openURL(url).catch(() => {
+        router.push(`/portal?patientId=${patient?.id}` as any);
+      });
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
       <ScrollView 
         style={styles.container}
         contentContainerStyle={styles.contentContainer}
@@ -92,7 +120,7 @@ export default function PatientDashboard() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Identity active</Text>
+            <Text style={styles.greeting}>Welcome back,</Text>
             <Text style={styles.name}>{patient.name}</Text>
           </View>
           <LogOut color={Colors.textSecondary} size={24} onPress={() => { logout(); router.replace('/'); }} />
@@ -106,7 +134,7 @@ export default function PatientDashboard() {
             </View>
             <Text style={styles.otpSubtitle}>Give this code to the doctor to securely authorize access to your medical file.</Text>
             <View style={styles.otpCodeContainer}>
-              <Text style={styles.otpCode}>{req.otp_hash}</Text>
+              <Text style={styles.otpCode}>{req.otp_hash || req.otp_code}</Text>
             </View>
           </Animated.View>
         ))}
@@ -115,7 +143,7 @@ export default function PatientDashboard() {
           <View style={styles.qrContainer}>
             {activeQR ? (
               <QRCode
-                value={activeQR.code_value}
+                value={getPortalUrl()}
                 size={220}
                 color={Colors.text}
                 backgroundColor={Colors.white}
@@ -130,6 +158,20 @@ export default function PatientDashboard() {
             <Text style={styles.securityText}>Consent-Gated Protection</Text>
           </View>
           <Text style={styles.qrHelperText}>Last updated: {new Date(patient.last_updated).toLocaleDateString()}</Text>
+
+          <View style={styles.portalActionBox}>
+            <Text style={styles.portalActionLabel}>WEB DOCTOR PORTAL (NO APP NEEDED)</Text>
+            <Text style={styles.portalActionDesc}>
+              Scanning this code opens the clinical web portal. You can test it directly in your browser:
+            </Text>
+            <Button 
+              title="Open Web Portal"
+              variant="outline"
+              icon={<ExternalLink size={16} color={Colors.primary} />}
+              onPress={handleOpenPortal}
+              style={{ width: '100%', marginTop: Spacing.sm }}
+            />
+          </View>
           
           <Button 
             title="Regenerate QR"
@@ -338,5 +380,28 @@ const styles = StyleSheet.create({
     ...Typography.display,
     color: Colors.primary,
     letterSpacing: 8,
+  },
+  portalActionBox: {
+    marginTop: Spacing.lg,
+    width: '100%',
+    backgroundColor: Colors.surface,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  portalActionLabel: {
+    ...Typography.metadata,
+    color: Colors.primary,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  portalActionDesc: {
+    ...Typography.small,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: Spacing.xs,
   },
 });

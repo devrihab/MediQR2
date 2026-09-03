@@ -23,11 +23,20 @@ export interface Allergy {
   severity: 'mild' | 'moderate' | 'severe';
 }
 
-export interface Prescription {
+export interface PrescribedMedicine {
   name: string;
   dosage: string;
+  frequency?: string;
+}
+
+export interface Prescription {
   date: string;
   prescribing_doctor: string;
+  is_current?: boolean;
+  medicines?: PrescribedMedicine[];
+  // Legacy fields
+  name?: string;
+  dosage?: string;
 }
 
 export interface Doctor {

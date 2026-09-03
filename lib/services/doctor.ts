@@ -221,5 +221,29 @@ export const DoctorService = {
         };
       }
     }
+  },
+
+  async addPrescription(patientId: string, doctorId: string, prescription: any): Promise<void> {
+    try {
+      if (!isConfigured()) throw new Error('Supabase not configured');
+      
+      const { error } = await supabase.rpc('add_prescription', {
+        target_patient_id: patientId,
+        new_prescription: prescription
+      });
+      
+      if (error) throw error;
+    } catch (e) {
+      // Fallback update in MEMORY_DB if possible
+      import('./patient').then(({ PatientService }) => {
+        PatientService.getPatientData(patientId).then(patient => {
+          const updated = {
+            ...patient,
+            prescriptions: [...(patient.prescriptions || []), prescription]
+          };
+          PatientService.updatePatient(updated).catch(console.error);
+        }).catch(console.error);
+      }).catch(console.error);
+    }
   }
 };

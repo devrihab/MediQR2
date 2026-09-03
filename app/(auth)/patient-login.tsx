@@ -43,7 +43,7 @@ export default function PatientLoginScreen() {
       if (isNew) {
         router.replace('/(patient)/setup');
       } else {
-        router.replace('/(patient)/dashboard');
+        router.replace('/(patient)/(tabs)' as any);
       }
     } catch (err: any) {
       setServerError(err.message || 'Failed to login. Please try again.');

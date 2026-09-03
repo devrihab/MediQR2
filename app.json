@@ -36,7 +36,13 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow MediQR to access your camera to scan patient QR codes."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

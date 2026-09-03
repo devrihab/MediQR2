@@ -86,18 +86,36 @@ export default function PatientDashboard() {
 
   const getPortalUrl = () => {
     if (!patient) return '';
+    let baseUrl = 'https://mediqr.app/portal';
     if (process.env.EXPO_PUBLIC_PORTAL_URL) {
-      return `${process.env.EXPO_PUBLIC_PORTAL_URL}/portal?patientId=${patient.id}`;
+      baseUrl = `${process.env.EXPO_PUBLIC_PORTAL_URL}/portal`;
+    } else if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+      baseUrl = `${window.location.origin}/portal`;
+    } else if (Constants.expoConfig?.hostUri) {
+      const ip = Constants.expoConfig.hostUri.split(':')[0];
+      baseUrl = `http://${ip}:8081/portal`;
     }
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}/portal?patientId=${patient.id}`;
+
+    try {
+      const payload = encodeURIComponent(
+        JSON.stringify({
+          id: patient.id,
+          name: patient.name,
+          email: patient.email,
+          blood_group: patient.blood_group,
+          allergies: patient.allergies,
+          conditions: patient.conditions,
+          medications: patient.medications,
+          prescriptions: patient.prescriptions,
+          emergency_contact: patient.emergency_contact,
+          last_updated: patient.last_updated,
+          data_source: patient.data_source,
+        })
+      );
+      return `${baseUrl}?patientId=${patient.id}&data=${payload}`;
+    } catch {
+      return `${baseUrl}?patientId=${patient.id}`;
     }
-    const hostUri = Constants.expoConfig?.hostUri;
-    if (hostUri) {
-      const ip = hostUri.split(':')[0];
-      return `http://${ip}:8081/portal?patientId=${patient.id}`;
-    }
-    return `https://mediqr.app/portal?patientId=${patient.id}`;
   };
 
   const handleOpenPortal = () => {

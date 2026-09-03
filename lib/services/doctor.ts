@@ -8,29 +8,30 @@ const isConfigured = () => {
 
 export const DoctorService = {
   async login(doctorId: string): Promise<Doctor> {
-    const id = doctorId === 'demo@mediqr.com' ? DEMO_DOCTOR_ID : doctorId;
-    const defaultDoctor: Doctor = { id, name: 'Dr. Sarah Adams' };
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(doctorId);
+    const id = isUUID ? doctorId : DEMO_DOCTOR_ID;
+    const name = doctorId.startsWith('Dr.') ? doctorId : (doctorId === 'demo@mediqr.com' ? 'Dr. Sarah Adams' : `Dr. ${doctorId}`);
+    const doctorObj: Doctor = { id, name };
 
     try {
       if (isConfigured()) {
         const { data, error } = await supabase
           .from('doctors')
-          .select('*')
-          .eq('id', id)
+          .upsert(doctorObj)
+          .select()
           .single();
           
         if (!error && data) {
           SHARED_DB.doctors.set(id, data);
           return data;
         }
-
-        // Auto-create doctor row
-        await supabase.from('doctors').upsert(defaultDoctor);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error('Doctor login upsert error:', e);
+    }
 
-    SHARED_DB.doctors.set(id, defaultDoctor);
-    return defaultDoctor;
+    SHARED_DB.doctors.set(id, doctorObj);
+    return doctorObj;
   },
 
   async getRequest(id: string): Promise<AccessRequest> {

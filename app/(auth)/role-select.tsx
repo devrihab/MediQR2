@@ -15,7 +15,7 @@ export default function RoleSelectScreen() {
         <View style={styles.header}>
           <View style={styles.brandContainer}>
             <Shield color={Colors.primary} size={32} style={styles.brandIcon} />
-            <Text style={styles.title}>MediQR</Text>
+            <Text style={styles.title}>MediQ</Text>
           </View>
           <Text style={styles.subtitle}>Your medical identity.</Text>
           <Text style={styles.subtitleMuted}>Available when it matters most.</Text>

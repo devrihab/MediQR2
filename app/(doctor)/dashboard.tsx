@@ -54,8 +54,8 @@ export default function DoctorDashboard() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView 
-        style={styles.container} 
+      <ScrollView
+        style={styles.container}
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
@@ -71,7 +71,7 @@ export default function DoctorDashboard() {
           <View style={styles.iconWrapper}>
             <ScanFace color={Colors.primary} size={48} />
           </View>
-          <Text style={styles.actionTitle}>Scan MediQR</Text>
+          <Text style={styles.actionTitle}>Scan MediQ</Text>
           <Text style={styles.actionSubtitle}>
             Scan a patient's code to request access to their secure medical file.
           </Text>
@@ -100,26 +100,26 @@ export default function DoctorDashboard() {
                     <Text style={styles.patientId}>Patient: {req.patient_id}</Text>
                     <Text style={styles.timestamp}>{new Date(req.created_at).toLocaleString()}</Text>
                   </View>
-                  
+
                   {req.status === 'pending' && (
-                    <Button 
-                      title="View" 
+                    <Button
+                      title="View"
                       variant="outline"
                       onPress={() => navigateToRequest(req)}
                       style={styles.actionBtn}
                     />
                   )}
                   {req.status === 'expired' && (
-                    <Button 
-                      title="Emergency Action" 
+                    <Button
+                      title="Emergency Action"
                       variant="danger"
                       onPress={() => router.push(`/(doctor)/emergency-confirm?patientId=${req.patient_id}`)}
                       style={styles.actionBtn}
                     />
                   )}
                   {req.status === 'approved' && (
-                    <Button 
-                      title="Open File" 
+                    <Button
+                      title="Open File"
                       variant="primary"
                       onPress={() => router.push(`/(doctor)/medical-data?patientId=${req.patient_id}`)}
                       style={styles.actionBtn}

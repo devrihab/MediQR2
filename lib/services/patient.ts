@@ -34,81 +34,140 @@ async function setLocalPatient(id: string, patient: Patient) {
   }
 }
 
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export const PatientService = {
   async login(email: string, password: string): Promise<{ patient: Patient | null, isNew: boolean }> {
-    const id = email === 'patient@demo.com' 
-      ? DEMO_PATIENT_ID 
-      : `p-${email.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-    
+    const cleanEmail = email.toLowerCase().trim();
+
+    // 1. Direct email lookup in Supabase patients table
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
-      
-      let user = null;
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      
-      if (signInError) {
-        if (signInError.message.includes('Invalid login credentials')) {
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
-          if (signUpError) throw signUpError;
-          user = signUpData.user;
-          if (!user) throw new Error("Signup failed");
-        } else {
-          throw signInError;
+      if (isConfigured()) {
+        const { data: existingByEmail, error: emailErr } = await supabase
+          .from('patients')
+          .select('*')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        if (!emailErr && existingByEmail) {
+          SHARED_DB.setPatient(existingByEmail);
+          await setLocalPatient(existingByEmail.id, existingByEmail);
+          return { patient: existingByEmail, isNew: false };
         }
-      } else {
-        user = signInData.user;
       }
+    } catch (e) {}
 
-      if (!user) throw new Error("Auth failed");
+    // 2. Try Supabase Auth
+    let patientId = generateUUID();
+    try {
+      if (isConfigured()) {
+        let user = null;
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        
+        if (signInError) {
+          const { data: signUpData } = await supabase.auth.signUp({ email: cleanEmail, password });
+          if (signUpData?.user) {
+            user = signUpData.user;
+          }
+        } else {
+          user = signInData?.user;
+        }
 
-      const patientId = user.id;
-      
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('id', patientId)
-        .single();
+        if (user?.id) {
+          patientId = user.id;
+          const { data: existingById } = await supabase
+            .from('patients')
+            .select('*')
+            .eq('id', patientId)
+            .maybeSingle();
 
-      if (error && error.code === 'PGRST116') {
-        return { patient: { id: patientId, email, name: '' } as Patient, isNew: true };
+          if (existingById) {
+            SHARED_DB.setPatient(existingById);
+            await setLocalPatient(existingById.id, existingById);
+            return { patient: existingById, isNew: false };
+          }
+        }
       }
-      
-      if (error) throw error;
-      SHARED_DB.setPatient(data);
-      return { patient: data, isNew: false };
-    } catch (e: any) {
-      const localP = await getLocalPatient(id);
-      if (localP) {
-        return { patient: localP, isNew: false };
-      }
-      return { patient: { id, email, name: '' } as Patient, isNew: true };
+    } catch (e) {}
+
+    // 3. Check local patient cache
+    const localP = await getLocalPatient(patientId);
+    if (localP) {
+      return { patient: localP, isNew: false };
     }
+
+    // 4. Return new patient with valid UUID
+    const newP: Patient = { 
+      id: patientId, 
+      email: cleanEmail, 
+      name: '',
+      blood_group: '',
+      allergies: [],
+      conditions: [],
+      medications: [],
+      prescriptions: [],
+      emergency_contact: { name: '', phone: '', relation: '' },
+      last_updated: new Date().toISOString(),
+      data_source: 'self-reported'
+    };
+    return { patient: newP, isNew: true };
   },
 
   async createPatient(patient: Omit<Patient, 'last_updated' | 'data_source'>): Promise<Patient> {
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(patient.id);
+    const validId = isUUID ? patient.id : generateUUID();
+
     const newPatient: Patient = {
       ...patient,
+      id: validId,
       data_source: 'self-reported',
       last_updated: new Date().toISOString(),
     };
     
     await setLocalPatient(newPatient.id, newPatient);
-    await this.regenerateQR(newPatient.id);
+    SHARED_DB.setPatient(newPatient);
 
     try {
-      if (!isConfigured()) return newPatient;
-      
-      const { data, error } = await supabase
-        .from('patients')
-        .insert(newPatient)
-        .select()
-        .single();
-        
-      if (error) return newPatient;
-      return data;
+      if (isConfigured()) {
+        const { data, error } = await supabase
+          .from('patients')
+          .upsert(newPatient)
+          .select()
+          .single();
+          
+        if (!error && data) {
+          // Log QR into Supabase qrs table
+          await supabase.from('qrs').upsert({
+            patient_id: data.id,
+            code_value: data.id,
+            is_active: true
+          });
+
+          // Log registration in audit_logs
+          await supabase.from('audit_logs').insert({
+            patient_id: data.id,
+            type: 'edit_data',
+            reason: 'Account profile registered',
+            timestamp: new Date().toISOString()
+          });
+
+          return data;
+        } else if (error) {
+          console.error('Supabase patient upsert error:', error);
+        }
+      }
     } catch (e) {
-      return newPatient;
+      console.error('Supabase createPatient error:', e);
     }
+
+    await this.regenerateQR(newPatient.id);
+    return newPatient;
   },
 
   async updatePatient(patient: Patient): Promise<Patient> {

@@ -124,8 +124,8 @@ export default function WebAccessPortal() {
     // 3. Resilient Fallback: Ensure doctor is NEVER blocked on a valid QR scan
     setPatient({
       id: patientIdParam,
-      name: 'Alex Rivera',
-      email: 'patient@demo.com',
+      name: 'Rihab KV',
+      email: 'rihab@mediqr.app',
       blood_group: 'O+',
       allergies: [{ name: 'Penicillin', severity: 'severe' }],
       conditions: ['Asthma (Mild)'],
@@ -139,9 +139,9 @@ export default function WebAccessPortal() {
         },
       ],
       emergency_contact: {
-        name: 'Sarah Rivera',
+        name: 'Family Contact',
         phone: '555-0199',
-        relation: 'Spouse',
+        relation: 'Family',
       },
       last_updated: new Date().toISOString(),
       data_source: 'self-reported',
@@ -306,7 +306,7 @@ export default function WebAccessPortal() {
             <Badge label="WEB CLINICAL PORTAL" variant="primary" style={{ marginLeft: Spacing.sm }} />
           </View>
           <Text style={styles.brandingSubtitle}>
-            Consent-Gated Emergency & Medical Access for Authorized Healthcare Providers
+            Consent-Gated Emergency & Medical Access for Authorized Doctors
           </Text>
         </View>
 
@@ -329,7 +329,7 @@ export default function WebAccessPortal() {
             <View style={styles.doctorBar}>
               <UserCheck size={18} color={Colors.textSecondary} />
               <Text style={styles.doctorBarText}>
-                Active Provider: <Text style={{ fontWeight: '700', color: Colors.text }}>{doctorName}</Text> ({hospital})
+                Active Doctor: <Text style={{ fontWeight: '700', color: Colors.text }}>{doctorName}</Text> ({hospital})
               </Text>
             </View>
 

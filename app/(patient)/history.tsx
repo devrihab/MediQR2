@@ -87,7 +87,7 @@ export default function HistoryScreen() {
         </View>
 
         {item.doctor_id && (
-          <Text style={styles.detailText}>Provider: <Text style={styles.bold}>{item.doctor_id}</Text></Text>
+          <Text style={styles.detailText}>Doctor: <Text style={styles.bold}>{item.doctor_id}</Text></Text>
         )}
 
         {isEmergency && item.reason && (

@@ -61,7 +61,7 @@ export default function DoctorDashboard() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Verified Provider</Text>
+            <Text style={styles.greeting}>Verified Doctor</Text>
             <Text style={styles.name}>{doctor.name}</Text>
           </View>
           <LogOut color={Colors.textSecondary} size={24} onPress={() => { logout(); router.replace('/'); }} />

@@ -49,8 +49,8 @@ export default function DoctorLoginScreen() {
       >
         <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.container}>
           <View style={styles.header}>
-            <Text style={styles.title}>Provider Access</Text>
-            <Text style={styles.subtitle}>Enter your certified provider ID to continue.</Text>
+            <Text style={styles.title}>Doctor Access</Text>
+            <Text style={styles.subtitle}>Enter your certified Doctor ID to continue.</Text>
           </View>
 
           <View style={styles.form}>
@@ -59,7 +59,7 @@ export default function DoctorLoginScreen() {
               name="doctorId"
               render={({ field: { onChange, value } }) => (
                 <Input
-                  label="Provider ID"
+                  label="Doctor ID"
                   placeholder="e.g. d-67890"
                   value={value}
                   onChangeText={onChange}

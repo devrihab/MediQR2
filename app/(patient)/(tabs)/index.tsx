@@ -12,6 +12,8 @@ import { Button } from '../../../components/ui/Button';
 import { ShieldCheck, History, Settings, LogOut, Activity, RefreshCw, Key, ExternalLink } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
+import { SHARED_DB } from '../../../lib/services/sharedDb';
+
 export default function PatientDashboard() {
   const { patient, logout } = useAuthStore();
   const router = useRouter();
@@ -34,9 +36,10 @@ export default function PatientDashboard() {
   };
 
   useEffect(() => {
-    loadData();
-    
     if (patient) {
+      SHARED_DB.setPatient(patient);
+      loadData();
+      
       const unsubscribe = PatientService.subscribeToPendingRequests(patient.id, () => {
         loadData();
       });
@@ -86,14 +89,31 @@ export default function PatientDashboard() {
 
   const getQRCodeValue = () => {
     if (!patient) return '';
+
+    // Encode full patient payload so any MediQR scanner can decode the exact person & records
+    const payload = encodeURIComponent(
+      JSON.stringify({
+        id: patient.id,
+        name: patient.name,
+        email: patient.email,
+        blood_group: patient.blood_group,
+        allergies: patient.allergies,
+        conditions: patient.conditions,
+        medications: patient.medications,
+        prescriptions: patient.prescriptions,
+        emergency_contact: patient.emergency_contact,
+        last_updated: patient.last_updated,
+        data_source: patient.data_source,
+      })
+    );
+
     if (process.env.EXPO_PUBLIC_PORTAL_URL) {
-      return `${process.env.EXPO_PUBLIC_PORTAL_URL}/portal?patientId=${patient.id}`;
+      return `${process.env.EXPO_PUBLIC_PORTAL_URL}/portal?patientId=${patient.id}&data=${payload}`;
     }
     if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}/portal?patientId=${patient.id}`;
+      return `${window.location.origin}/portal?patientId=${patient.id}&data=${payload}`;
     }
-    // Clean, standard patient UUID for in-app scanner and standard camera scanners
-    return patient.id;
+    return `mediqr://patient?patientId=${patient.id}&data=${payload}`;
   };
 
   const handleOpenPortal = () => {

@@ -30,7 +30,7 @@ export default function RoleSelectScreen() {
             style={styles.button}
           />
           <Button
-            title="Continue as Provider"
+            title="Continue as Doctor"
             onPress={() => router.push('/(auth)/doctor-login')}
             variant="secondary"
             icon={<Shield color={Colors.text} size={20} />}

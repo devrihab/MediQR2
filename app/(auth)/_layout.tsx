@@ -22,7 +22,7 @@ export default function AuthLayout() {
       />
       <Stack.Screen 
         name="doctor-login" 
-        options={{ title: 'Provider Access', headerBackTitle: 'Back' }} 
+        options={{ title: 'Doctor Access', headerBackTitle: 'Back' }} 
       />
     </Stack>
   );

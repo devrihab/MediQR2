@@ -15,6 +15,7 @@ import { Colors, Typography, Spacing, BorderRadius } from '../../constants/Theme
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Scan, Flashlight, FlashlightOff, Camera as CameraIcon, ShieldCheck, Keyboard } from 'lucide-react-native';
+import { SHARED_DB } from '../../lib/services/sharedDb';
 
 export default function ScanScreen() {
   const router = useRouter();
@@ -24,14 +25,39 @@ export default function ScanScreen() {
   const [scanned, setScanned] = useState(false);
   const [torch, setTorch] = useState(false);
   const [showManual, setShowManual] = useState(false);
-  const [manualId, setManualId] = useState(
-    process.env.EXPO_PUBLIC_DEMO_PATIENT_ID || '11111111-1111-1111-1111-111111111111'
-  );
+  
+  const [activePatient, setActivePatient] = useState(() => SHARED_DB.getLatestPatient());
+  const [manualId, setManualId] = useState(() => SHARED_DB.getLatestPatient().id);
+
+  useEffect(() => {
+    const p = SHARED_DB.getLatestPatient();
+    setActivePatient(p);
+    setManualId(p.id);
+
+    const unsub = SHARED_DB.subscribe(() => {
+      const updated = SHARED_DB.getLatestPatient();
+      setActivePatient(updated);
+      setManualId(updated.id);
+    });
+    return () => unsub();
+  }, []);
 
   // Extract Patient ID from raw QR text or full web URL
   const extractPatientId = (raw: string): string => {
     if (!raw) return '';
     const trimmed = raw.trim();
+
+    // Check for encoded full patient payload: mediqr://patient?data=...
+    if (trimmed.includes('data=')) {
+      try {
+        const dataPart = trimmed.split('data=')[1].split('&')[0];
+        const parsed = JSON.parse(decodeURIComponent(dataPart));
+        if (parsed && parsed.id) {
+          SHARED_DB.setPatient(parsed);
+          return parsed.id;
+        }
+      } catch (e) {}
+    }
 
     // Check for URL query parameter: ?patientId=UUID
     if (trimmed.includes('patientId=')) {
@@ -128,15 +154,42 @@ export default function ScanScreen() {
     );
   }
 
+  useEffect(() => {
+    let sub: any;
+    if (Platform.OS !== 'web') {
+      try {
+        sub = CameraView.onModernBarcodeScanned((result) => {
+          if (result && result.data) {
+            handleBarcodeScanned({ data: result.data, type: 'qr' } as any);
+          }
+        });
+      } catch (e) {}
+    }
+    return () => {
+      sub?.remove?.();
+    };
+  }, []);
+
+  const handleLaunchNativeScanner = async () => {
+    try {
+      if (Platform.OS !== 'web') {
+        await CameraView.launchScanner({ barcodeTypes: ['qr'] });
+      }
+    } catch (e) {
+      console.log('Native scanner error:', e);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Real-time Camera View */}
+      {/* Real-time Camera View with Continuous Autofocus */}
       <CameraView
         style={StyleSheet.absoluteFill}
         facing="back"
         enableTorch={torch}
+        autofocus="on"
         barcodeScannerSettings={{
-          barcodeTypes: ['qr', 'code128', 'ean13'],
+          barcodeTypes: ['qr'],
         }}
         onMountError={() => {
           setShowManual(true);
@@ -153,17 +206,29 @@ export default function ScanScreen() {
             <Text style={styles.badgeText}>MediQR Scanner Active</Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.torchBtn}
-            onPress={() => setTorch(!torch)}
-            activeOpacity={0.8}
-          >
-            {torch ? (
-              <FlashlightOff size={22} color={Colors.white} />
-            ) : (
-              <Flashlight size={22} color={Colors.white} />
+          <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+            {Platform.OS !== 'web' && (
+              <TouchableOpacity
+                style={styles.torchBtn}
+                onPress={handleLaunchNativeScanner}
+                activeOpacity={0.8}
+              >
+                <CameraIcon size={20} color={Colors.white} />
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.torchBtn}
+              onPress={() => setTorch(!torch)}
+              activeOpacity={0.8}
+            >
+              {torch ? (
+                <FlashlightOff size={22} color={Colors.white} />
+              ) : (
+                <Flashlight size={22} color={Colors.white} />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Center Scanner Window */}
@@ -193,7 +258,7 @@ export default function ScanScreen() {
           ]}
         >
           <Button
-            title="⚡ Simulate QR Scan (Test Demo)"
+            title={`⚡ Simulate QR Scan (${activePatient.name})`}
             onPress={handleManualSubmit}
             style={{ marginBottom: Spacing.sm, width: '100%' }}
           />

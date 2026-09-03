@@ -175,26 +175,25 @@ export const PatientService = {
 
     const fallbackP: Patient = {
       id: patientId,
-      name: 'Alex Rivera',
-      email: 'alex.rivera@example.com',
+      name: 'Rihab KV',
+      email: 'rihab@mediqr.app',
       blood_group: 'O+',
       allergies: [
         { name: 'Penicillin', severity: 'severe' },
-        { name: 'Peanuts', severity: 'moderate' }
       ],
-      conditions: ['Asthma (Mild)', 'Hypertension'],
+      conditions: ['Asthma (Mild)'],
       medications: ['Albuterol Inhaler (90mcg, As needed)'],
       prescriptions: [{
         name: 'Albuterol Inhaler',
         dosage: '90mcg (As needed)',
         date: '2026-02-15',
         prescribing_doctor: 'Dr. Sarah Adams',
-        is_current: false
+        is_current: true
       }],
       emergency_contact: {
-        name: 'Sarah Rivera',
+        name: 'Family Contact',
         phone: '555-0199',
-        relation: 'Spouse'
+        relation: 'Family'
       },
       last_updated: new Date().toISOString(),
       data_source: 'self-reported'

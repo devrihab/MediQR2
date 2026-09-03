@@ -136,7 +136,10 @@ export default function ScanScreen() {
         facing="back"
         enableTorch={torch}
         barcodeScannerSettings={{
-          barcodeTypes: ['qr'],
+          barcodeTypes: ['qr', 'code128', 'ean13'],
+        }}
+        onMountError={() => {
+          setShowManual(true);
         }}
         onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
       />
@@ -182,13 +185,19 @@ export default function ScanScreen() {
           <Text style={styles.instructionText}>Align patient's QR code within the frame</Text>
         </View>
 
-        {/* Bottom Drawer / Manual Entry Bar */}
+        {/* Bottom Drawer / Quick Scan Bar */}
         <View
           style={[
             styles.bottomBar,
             { paddingBottom: Math.max(insets.bottom, Spacing.lg) },
           ]}
         >
+          <Button
+            title="⚡ Simulate QR Scan (Test Demo)"
+            onPress={handleManualSubmit}
+            style={{ marginBottom: Spacing.sm, width: '100%' }}
+          />
+
           {showManual ? (
             <View style={styles.manualBox}>
               <Text style={styles.manualTitle}>Manual Patient Identification</Text>

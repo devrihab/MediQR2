@@ -84,48 +84,26 @@ export default function PatientDashboard() {
 
   if (!patient) return null;
 
-  const getPortalUrl = () => {
+  const getQRCodeValue = () => {
     if (!patient) return '';
-    let baseUrl = 'https://mediqr.app/portal';
     if (process.env.EXPO_PUBLIC_PORTAL_URL) {
-      baseUrl = `${process.env.EXPO_PUBLIC_PORTAL_URL}/portal`;
-    } else if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-      baseUrl = `${window.location.origin}/portal`;
-    } else if (Constants.expoConfig?.hostUri) {
-      const ip = Constants.expoConfig.hostUri.split(':')[0];
-      baseUrl = `http://${ip}:8081/portal`;
+      return `${process.env.EXPO_PUBLIC_PORTAL_URL}/portal?patientId=${patient.id}`;
     }
-
-    try {
-      const payload = encodeURIComponent(
-        JSON.stringify({
-          id: patient.id,
-          name: patient.name,
-          email: patient.email,
-          blood_group: patient.blood_group,
-          allergies: patient.allergies,
-          conditions: patient.conditions,
-          medications: patient.medications,
-          prescriptions: patient.prescriptions,
-          emergency_contact: patient.emergency_contact,
-          last_updated: patient.last_updated,
-          data_source: patient.data_source,
-        })
-      );
-      return `${baseUrl}?patientId=${patient.id}&data=${payload}`;
-    } catch {
-      return `${baseUrl}?patientId=${patient.id}`;
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
+      return `${window.location.origin}/portal?patientId=${patient.id}`;
     }
+    // Clean, standard patient UUID for in-app scanner and standard camera scanners
+    return patient.id;
   };
 
   const handleOpenPortal = () => {
-    const url = getPortalUrl();
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
-      window.open(url, '_blank');
+      const webUrl = process.env.EXPO_PUBLIC_PORTAL_URL 
+        ? `${process.env.EXPO_PUBLIC_PORTAL_URL}/portal?patientId=${patient?.id}`
+        : `${window.location.origin}/portal?patientId=${patient?.id}`;
+      window.open(webUrl, '_blank');
     } else {
-      Linking.openURL(url).catch(() => {
-        router.push(`/portal?patientId=${patient?.id}` as any);
-      });
+      router.push(`/portal?patientId=${patient?.id}` as any);
     }
   };
 
@@ -161,7 +139,7 @@ export default function PatientDashboard() {
           <View style={styles.qrContainer}>
             {activeQR ? (
               <QRCode
-                value={getPortalUrl()}
+                value={getQRCodeValue()}
                 size={220}
                 color={Colors.text}
                 backgroundColor={Colors.white}

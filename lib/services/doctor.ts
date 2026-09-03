@@ -1,19 +1,9 @@
 import { supabase } from '../supabase';
-import { Doctor, AccessRequest } from '../../types';
+import { Doctor, AccessRequest, AccessRequestStatus } from '../../types';
+import { SHARED_DB, DEMO_DOCTOR_ID } from './sharedDb';
 
 const isConfigured = () => {
   return process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_URL !== 'https://placeholder-url.supabase.co';
-};
-
-// DEMO CONFIGURATION
-const DEMO_DOCTOR_ID = '22222222-2222-2222-2222-222222222222';
-
-const MEMORY_DB = {
-  doctors: new Map<string, Doctor>([
-    [DEMO_DOCTOR_ID, { id: DEMO_DOCTOR_ID, name: 'Dr. Smith' }]
-  ]),
-  access_requests: [] as AccessRequest[],
-  audit_logs: [] as any[],
 };
 
 export const DoctorService = {
@@ -31,19 +21,20 @@ export const DoctorService = {
         const id = doctorId === 'demo@mediqr.com' ? DEMO_DOCTOR_ID : doctorId;
         const newDoctor = { id, name: `Dr. ${id.substring(0, 4)}` };
         await supabase.from('doctors').insert(newDoctor);
+        SHARED_DB.doctors.set(id, newDoctor);
         return newDoctor;
       }
       if (error) throw error;
+      SHARED_DB.doctors.set(data.id, data);
       return data;
     } catch (e) {
-      // Offline Demo Fallback
-      if (MEMORY_DB.doctors.has(doctorId)) {
-        return MEMORY_DB.doctors.get(doctorId)!;
+      if (SHARED_DB.doctors.has(doctorId)) {
+        return SHARED_DB.doctors.get(doctorId)!;
       }
       
       const id = doctorId === 'demo@mediqr.com' ? DEMO_DOCTOR_ID : doctorId;
       const doc = { id, name: 'Dr. ' + id.split('-')[0] };
-      MEMORY_DB.doctors.set(id, doc);
+      SHARED_DB.doctors.set(id, doc);
       return doc;
     }
   },
@@ -55,37 +46,58 @@ export const DoctorService = {
       if (error) throw error;
       return data;
     } catch (e) {
-      const req = MEMORY_DB.access_requests.find(r => r.id === id);
+      const req = SHARED_DB.access_requests.find(r => r.id === id);
       if (!req) throw new Error('Request not found');
       return req;
     }
   },
 
-  subscribeToRequest(id: string, callback: (status: 'pending' | 'approved' | 'expired') => void): () => void {
-    if (!isConfigured()) {
-      const interval = setInterval(() => {
-        const req = MEMORY_DB.access_requests.find(r => r.id === id);
-        if (req && req.status !== 'pending') callback(req.status);
-      }, 2000);
-      return () => clearInterval(interval);
-    }
+  subscribeToRequest(requestId: string, callback: (status: AccessRequestStatus) => void): () => void {
+    const checkStatus = () => {
+      const req = SHARED_DB.access_requests.find(r => r.id === requestId);
+      if (req) callback(req.status);
+    };
 
-    const channel = supabase.channel(`req_${id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'access_requests', filter: `id=eq.${id}` }, 
-        (payload) => {
-          callback(payload.new.status);
-        }
-      )
-      .subscribe();
+    const unsubShared = SHARED_DB.subscribe(checkStatus);
+    const interval = setInterval(checkStatus, 1500);
+
+    let unsubSupabase = () => {};
+    try {
+      if (isConfigured()) {
+        const channel = supabase.channel(`req_${requestId}`)
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'access_requests', filter: `id=eq.${requestId}` }, 
+            payload => callback(payload.new.status)
+          )
+          .subscribe();
+        unsubSupabase = () => { supabase.removeChannel(channel); };
+      }
+    } catch (err) {}
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubShared();
+      clearInterval(interval);
+      unsubSupabase();
     };
   },
 
   async requestAccess(patientId: string, doctorId: string): Promise<AccessRequest> {
+    const otp = Math.floor(10000 + Math.random() * 90000).toString();
+    const fallbackReq: AccessRequest = {
+      id: `req-${Date.now()}`,
+      doctor_id: doctorId,
+      patient_id: patientId,
+      status: 'pending',
+      otp_code: otp,
+      otp_hash: otp,
+      created_at: new Date().toISOString()
+    };
+
+    // Always store in shared DB first for instantaneous local & demo response
+    SHARED_DB.access_requests.unshift(fallbackReq);
+    SHARED_DB.notifyChange();
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return fallbackReq;
       
       const { data, error } = await supabase.functions.invoke('request-access', {
         body: { patientId, doctorId }
@@ -94,30 +106,27 @@ export const DoctorService = {
       if (error) throw error;
       return data.request;
     } catch (e) {
-      // Local fallback generation
-      const otp = Math.floor(10000 + Math.random() * 90000).toString();
-      
-      // MVP Demo console log fallback
-      console.log(`\n\n[HACKATHON MVP BACKUP] 🚨 EMAIL SIMULATION DELAYED 🚨`);
-      console.log(`Generated OTP for patient ${patientId}: ${otp}\n\n`);
-      
-      const fallbackReq: AccessRequest = {
-        id: `req-${Date.now()}`,
-        doctor_id: doctorId,
-        patient_id: patientId,
-        status: 'pending',
-        otp_code: otp,
-        created_at: new Date().toISOString()
-      };
-      MEMORY_DB.access_requests.push(fallbackReq);
-
       return fallbackReq;
     }
   },
   
   async verifyOTP(requestId: string, inputOTP: string, doctorId?: string, patientId?: string): Promise<boolean> {
+    const req = SHARED_DB.access_requests.find(r => r.id === requestId);
+    if (req && (req.otp_code === inputOTP || req.otp_hash === inputOTP) && req.status === 'pending') {
+      req.status = 'approved';
+      SHARED_DB.audit_logs.unshift({
+        id: `audit-${Date.now()}`,
+        patient_id: req.patient_id,
+        doctor_id: req.doctor_id,
+        type: 'normal_view',
+        timestamp: new Date().toISOString()
+      });
+      SHARED_DB.notifyChange();
+      return true;
+    }
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return false;
       
       const { data, error } = await supabase.functions.invoke('verify-otp', {
         body: { requestId, doctorId, patientId, otpInput: inputOTP }
@@ -126,42 +135,45 @@ export const DoctorService = {
       if (error) throw new Error('Verification failed');
       return true;
     } catch (e) {
-      const req = MEMORY_DB.access_requests.find(r => r.id === requestId);
-      if (req && req.otp_code === inputOTP && req.status === 'pending') {
-        req.status = 'approved';
-        MEMORY_DB.audit_logs.unshift({
-          id: `audit-${Date.now()}`,
-          patient_id: req.patient_id,
-          doctor_id: req.doctor_id,
-          type: 'normal_view',
-          timestamp: new Date().toISOString()
-        });
-        return true;
-      }
       return false;
     }
   },
 
   async logExpiredRequest(patientId: string, doctorId: string, requestId: string): Promise<void> {
-    try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
-      await supabase.functions.invoke('expire-request', {
-        body: { requestId, doctorId, patientId }
-      });
-    } catch (e) {
-      MEMORY_DB.audit_logs.unshift({
+    const req = SHARED_DB.access_requests.find(r => r.id === requestId);
+    if (req) {
+      req.status = 'expired';
+      SHARED_DB.audit_logs.unshift({
         id: `audit-${Date.now()}`,
         patient_id: patientId,
         doctor_id: doctorId,
         type: 'request_expired',
         timestamp: new Date().toISOString()
       });
+      SHARED_DB.notifyChange();
     }
+
+    try {
+      if (!isConfigured()) return;
+      await supabase.functions.invoke('expire-request', {
+        body: { requestId, doctorId, patientId }
+      });
+    } catch (e) {}
   },
 
   async triggerEmergencyAccess(patientId: string, doctorId: string, reason: string): Promise<boolean> {
+    SHARED_DB.audit_logs.unshift({
+      id: `audit-${Date.now()}`,
+      patient_id: patientId,
+      doctor_id: doctorId,
+      type: 'emergency_view',
+      reason,
+      timestamp: new Date().toISOString()
+    });
+    SHARED_DB.notifyChange();
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return true;
       
       const { error } = await supabase.functions.invoke('emergency-access', {
         body: { patientId, doctorId, reason }
@@ -170,14 +182,6 @@ export const DoctorService = {
       if (error) throw error;
       return true;
     } catch (e) {
-      MEMORY_DB.audit_logs.unshift({
-        id: `audit-${Date.now()}`,
-        patient_id: patientId,
-        doctor_id: doctorId,
-        type: 'emergency_view',
-        reason,
-        timestamp: new Date().toISOString()
-      });
       return true;
     }
   },
@@ -195,15 +199,21 @@ export const DoctorService = {
       if (error) throw error;
       return data || [];
     } catch (e) {
-      return MEMORY_DB.access_requests
+      return SHARED_DB.access_requests
         .filter(r => r.doctor_id === doctorId)
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
   },
 
   async resolveRequest(requestId: string, status: 'approved' | 'expired'): Promise<void> {
+    const req = SHARED_DB.access_requests.find(r => r.id === requestId);
+    if (req) {
+      req.status = status;
+      SHARED_DB.notifyChange();
+    }
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return;
       
       const { error } = await supabase
         .from('access_requests')
@@ -211,21 +221,18 @@ export const DoctorService = {
         .eq('id', requestId);
         
       if (error) throw error;
-    } catch (e) {
-      const reqIndex = MEMORY_DB.access_requests.findIndex(r => r.id === requestId);
-      if (reqIndex !== -1) {
-        MEMORY_DB.access_requests[reqIndex] = {
-          ...MEMORY_DB.access_requests[reqIndex],
-          status,
-          resolved_at: new Date().toISOString()
-        };
-      }
-    }
+    } catch (e) {}
   },
 
   async addPrescription(patientId: string, doctorId: string, prescription: any): Promise<void> {
+    const patient = SHARED_DB.getPatient(patientId);
+    if (patient) {
+      patient.prescriptions = [...(patient.prescriptions || []), prescription];
+      SHARED_DB.notifyChange();
+    }
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return;
       
       const { error } = await supabase.rpc('add_prescription', {
         target_patient_id: patientId,
@@ -234,12 +241,11 @@ export const DoctorService = {
       
       if (error) throw error;
     } catch (e) {
-      // Fallback update in MEMORY_DB if possible
       import('./patient').then(({ PatientService }) => {
-        PatientService.getPatientData(patientId).then(patient => {
+        PatientService.getPatientData(patientId).then(p => {
           const updated = {
-            ...patient,
-            prescriptions: [...(patient.prescriptions || []), prescription]
+            ...p,
+            prescriptions: [...(p.prescriptions || []), prescription]
           };
           PatientService.updatePatient(updated).catch(console.error);
         }).catch(console.error);

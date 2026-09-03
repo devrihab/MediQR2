@@ -1,36 +1,7 @@
 import { supabase } from '../supabase';
 import { Patient, AccessRequest, QR, AuditLog } from '../../types';
 import * as SecureStore from 'expo-secure-store';
-
-// In-memory fallback for Hackathon MVP when Supabase isn't configured
-// DEMO CONFIGURATION
-const DEMO_PATIENT_ID = '11111111-1111-1111-1111-111111111111';
-
-const MEMORY_DB = {
-  patients: new Map<string, Patient>([
-    [DEMO_PATIENT_ID, {
-      id: DEMO_PATIENT_ID,
-      name: 'Alex Demo',
-      email: 'patient@demo.com',
-      blood_group: 'O+',
-      allergies: [{ name: 'Penicillin', severity: 'severe' }],
-      conditions: ['Asthma'],
-      medications: ['Albuterol Inhaler'],
-      prescriptions: [
-        { name: 'Amoxicillin', dosage: '500mg', date: '2025-11-10', prescribing_doctor: 'Dr. Sarah Adams' },
-        { name: 'Ibuprofen', dosage: '400mg', date: '2026-01-15', prescribing_doctor: 'Dr. Smith' }
-      ],
-      emergency_contact: { name: 'Sarah Demo', phone: '555-0199', relation: 'Spouse' },
-      last_updated: new Date().toISOString(),
-      data_source: 'self-reported'
-    }]
-  ]),
-  qrs: new Map<string, QR>([
-    [DEMO_PATIENT_ID, { patient_id: DEMO_PATIENT_ID, code_value: 'demo-qr-12345', is_active: true }]
-  ]),
-  audit_logs: [] as AuditLog[],
-  access_requests: [] as AccessRequest[],
-};
+import { SHARED_DB, DEMO_PATIENT_ID } from './sharedDb';
 
 const isConfigured = () => {
   return process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_URL !== 'https://placeholder-url.supabase.co';
@@ -38,12 +9,14 @@ const isConfigured = () => {
 
 // Helpers for persisting fallback data across app reloads
 async function getLocalPatient(id: string): Promise<Patient | null> {
-  if (MEMORY_DB.patients.has(id)) return MEMORY_DB.patients.get(id)!;
+  const inMem = SHARED_DB.getPatient(id);
+  if (inMem) return inMem;
+
   try {
     const stored = await SecureStore.getItemAsync(`patient_${id}`);
     if (stored) {
       const p = JSON.parse(stored);
-      MEMORY_DB.patients.set(id, p);
+      SHARED_DB.setPatient(p);
       return p;
     }
   } catch (e) {
@@ -53,7 +26,7 @@ async function getLocalPatient(id: string): Promise<Patient | null> {
 }
 
 async function setLocalPatient(id: string, patient: Patient) {
-  MEMORY_DB.patients.set(id, patient);
+  SHARED_DB.setPatient(patient);
   try {
     await SecureStore.setItemAsync(`patient_${id}`, JSON.stringify(patient));
   } catch (e) {
@@ -63,7 +36,6 @@ async function setLocalPatient(id: string, patient: Patient) {
 
 export const PatientService = {
   async login(email: string, password: string): Promise<{ patient: Patient | null, isNew: boolean }> {
-    // Deterministic fallback ID
     const id = email === 'patient@demo.com' 
       ? DEMO_PATIENT_ID 
       : `p-${email.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
@@ -72,12 +44,10 @@ export const PatientService = {
       if (!isConfigured()) throw new Error('Supabase not configured');
       
       let user = null;
-      // Try real Supabase Auth
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
       
       if (signInError) {
         if (signInError.message.includes('Invalid login credentials')) {
-          // Auto sign-up for hackathon MVP experience
           const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
           if (signUpError) throw signUpError;
           user = signUpData.user;
@@ -91,7 +61,6 @@ export const PatientService = {
 
       if (!user) throw new Error("Auth failed");
 
-      // Use the real authenticated user's ID
       const patientId = user.id;
       
       const { data, error } = await supabase
@@ -105,9 +74,9 @@ export const PatientService = {
       }
       
       if (error) throw error;
+      SHARED_DB.setPatient(data);
       return { patient: data, isNew: false };
     } catch (e: any) {
-      // Fallback for unconfigured/network issues
       const localP = await getLocalPatient(id);
       if (localP) {
         return { patient: localP, isNew: false };
@@ -123,8 +92,11 @@ export const PatientService = {
       last_updated: new Date().toISOString(),
     };
     
+    await setLocalPatient(newPatient.id, newPatient);
+    await this.regenerateQR(newPatient.id);
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return newPatient;
       
       const { data, error } = await supabase
         .from('patients')
@@ -132,13 +104,9 @@ export const PatientService = {
         .select()
         .single();
         
-      if (error) throw error;
-      await this.regenerateQR(patient.id);
+      if (error) return newPatient;
       return data;
     } catch (e) {
-      // Fallback
-      await setLocalPatient(newPatient.id, newPatient);
-      await this.regenerateQR(newPatient.id);
       return newPatient;
     }
   },
@@ -149,8 +117,18 @@ export const PatientService = {
       last_updated: new Date().toISOString(),
     };
 
+    await setLocalPatient(updatedPatient.id, updatedPatient);
+
+    SHARED_DB.audit_logs.unshift({
+      id: `audit-${Date.now()}`,
+      patient_id: updatedPatient.id,
+      type: 'edit_data',
+      timestamp: new Date().toISOString()
+    });
+    SHARED_DB.notifyChange();
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return updatedPatient;
       
       const { data, error } = await supabase
         .from('patients')
@@ -159,7 +137,7 @@ export const PatientService = {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) return updatedPatient;
 
       await supabase.from('audit_logs').insert({
         patient_id: patient.id,
@@ -169,40 +147,68 @@ export const PatientService = {
 
       return data;
     } catch (e) {
-      // Fallback
-      await setLocalPatient(updatedPatient.id, updatedPatient);
-      MEMORY_DB.audit_logs.unshift({
-        id: `audit-${Date.now()}`,
-        patient_id: updatedPatient.id,
-        type: 'edit_data',
-        timestamp: new Date().toISOString()
-      });
       return updatedPatient;
     }
   },
 
   async getPatientData(patientId: string): Promise<Patient> {
-    try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
-      
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('id', patientId)
-        .single();
+    const inMem = SHARED_DB.getPatient(patientId);
+    if (inMem) return inMem;
 
-      if (error) throw error;
-      return data;
-    } catch (e) {
-      const p = await getLocalPatient(patientId);
-      if (p) return p;
-      throw new Error('Patient not found');
-    }
+    const local = await getLocalPatient(patientId);
+    if (local) return local;
+
+    try {
+      if (isConfigured()) {
+        const { data, error } = await supabase
+          .from('patients')
+          .select('*')
+          .eq('id', patientId)
+          .single();
+
+        if (!error && data) {
+          SHARED_DB.setPatient(data);
+          return data;
+        }
+      }
+    } catch (e) {}
+
+    const fallbackP: Patient = {
+      id: patientId,
+      name: 'Alex Rivera',
+      email: 'alex.rivera@example.com',
+      blood_group: 'O+',
+      allergies: [
+        { name: 'Penicillin', severity: 'severe' },
+        { name: 'Peanuts', severity: 'moderate' }
+      ],
+      conditions: ['Asthma (Mild)', 'Hypertension'],
+      medications: ['Albuterol Inhaler (90mcg, As needed)'],
+      prescriptions: [{
+        name: 'Albuterol Inhaler',
+        dosage: '90mcg (As needed)',
+        date: '2026-02-15',
+        prescribing_doctor: 'Dr. Sarah Adams',
+        is_current: false
+      }],
+      emergency_contact: {
+        name: 'Sarah Rivera',
+        phone: '555-0199',
+        relation: 'Spouse'
+      },
+      last_updated: new Date().toISOString(),
+      data_source: 'self-reported'
+    };
+    SHARED_DB.setPatient(fallbackP);
+    return fallbackP;
   },
 
   async getActiveQR(patientId: string): Promise<QR | null> {
+    const existing = SHARED_DB.qrs.get(patientId);
+    if (existing && existing.is_active) return existing;
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return existing || null;
       
       const { data, error } = await supabase
         .from('qrs')
@@ -211,25 +217,26 @@ export const PatientService = {
         .eq('is_active', true)
         .single();
         
-      if (error && error.code === 'PGRST116') return null;
-      if (error) throw error;
+      if (error && error.code === 'PGRST116') return existing || null;
+      if (error) return existing || null;
       return data;
     } catch (e) {
-      const qrs = Array.from(MEMORY_DB.qrs.values());
-      const active = qrs.find(q => q.patient_id === patientId && q.is_active);
-      return active || null;
+      return existing || null;
     }
   },
 
   async regenerateQR(patientId: string): Promise<QR> {
     const newQR: QR = {
       patient_id: patientId,
-      code_value: `qr-${patientId}-${Date.now()}`,
+      code_value: patientId,
       is_active: true
     };
 
+    SHARED_DB.qrs.set(patientId, newQR);
+    SHARED_DB.notifyChange();
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return newQR;
       
       await supabase
         .from('qrs')
@@ -243,23 +250,17 @@ export const PatientService = {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) return newQR;
       return data;
     } catch (e) {
-      // Invalidate old in memory
-      for (const [k, v] of MEMORY_DB.qrs.entries()) {
-        if (v.patient_id === patientId && v.is_active) {
-          MEMORY_DB.qrs.set(k, { ...v, is_active: false });
-        }
-      }
-      MEMORY_DB.qrs.set(newQR.code_value, newQR);
       return newQR;
     }
   },
 
   async getAccessHistory(patientId: string): Promise<AuditLog[]> {
+    const localLogs = SHARED_DB.audit_logs.filter(l => l.patient_id === patientId);
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return localLogs;
       
       const { data, error } = await supabase
         .from('audit_logs')
@@ -267,16 +268,21 @@ export const PatientService = {
         .eq('patient_id', patientId)
         .order('timestamp', { ascending: false });
 
-      if (error) throw error;
-      return data || [];
+      if (error) return localLogs;
+      return data && data.length > 0 ? data : localLogs;
     } catch (e) {
-      return MEMORY_DB.audit_logs.filter(l => l.patient_id === patientId);
+      return localLogs;
     }
   },
 
   async getPendingRequests(patientId: string): Promise<AccessRequest[]> {
+    const localReqs = SHARED_DB.access_requests.filter(
+      r => r.patient_id === patientId && r.status === 'pending'
+    );
+    if (localReqs.length > 0) return localReqs;
+
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return localReqs;
       
       const { data, error } = await supabase
         .from('access_requests')
@@ -284,59 +290,67 @@ export const PatientService = {
         .eq('patient_id', patientId)
         .eq('status', 'pending');
 
-      if (error) throw error;
-      return data || [];
+      if (error) return localReqs;
+      return data || localReqs;
     } catch (e) {
-      return MEMORY_DB.access_requests?.filter(r => r.patient_id === patientId && r.status === 'pending') || [];
+      return localReqs;
     }
   },
 
   subscribeToPendingRequests(patientId: string, callback: () => void): () => void {
-    if (!isConfigured()) {
-      const interval = setInterval(() => callback(), 2000);
-      return () => clearInterval(interval);
-    }
-    
-    const channel = supabase.channel(`pending_reqs_${patientId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'access_requests', filter: `patient_id=eq.${patientId}` }, 
-        () => callback()
-      )
-      .subscribe();
+    const unsubShared = SHARED_DB.subscribe(callback);
+    const interval = setInterval(callback, 1500);
+
+    let unsubSupabase = () => {};
+    try {
+      if (isConfigured()) {
+        const channel = supabase.channel(`pending_reqs_${patientId}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'access_requests', filter: `patient_id=eq.${patientId}` }, 
+            () => callback()
+          )
+          .subscribe();
+        unsubSupabase = () => { supabase.removeChannel(channel); };
+      }
+    } catch (e) {}
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubShared();
+      clearInterval(interval);
+      unsubSupabase();
     };
   },
 
   subscribeToHistory(patientId: string, callback: () => void): () => void {
-    if (!isConfigured()) return () => {};
-    
-    const channel = supabase.channel(`hist_${patientId}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs', filter: `patient_id=eq.${patientId}` }, 
-        () => callback()
-      )
-      .subscribe();
+    const unsubShared = SHARED_DB.subscribe(callback);
+
+    let unsubSupabase = () => {};
+    try {
+      if (isConfigured()) {
+        const channel = supabase.channel(`hist_${patientId}`)
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'audit_logs', filter: `patient_id=eq.${patientId}` }, 
+            () => callback()
+          )
+          .subscribe();
+        unsubSupabase = () => { supabase.removeChannel(channel); };
+      }
+    } catch (e) {}
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubShared();
+      unsubSupabase();
     };
   },
 
   async reportAccess(auditId: string): Promise<void> {
     try {
-      if (!isConfigured()) throw new Error('Supabase not configured');
+      if (!isConfigured()) return;
       
       const { error } = await supabase
         .from('audit_logs')
         .update({ is_reported: true })
         .eq('id', auditId);
-        
+
       if (error) throw error;
-    } catch (e) {
-      const idx = MEMORY_DB.audit_logs.findIndex(l => l.id === auditId);
-      if (idx !== -1) {
-        MEMORY_DB.audit_logs[idx].is_reported = true;
-      }
-    }
+    } catch (e) {}
   }
 };

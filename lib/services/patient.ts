@@ -152,12 +152,6 @@ export const PatientService = {
   },
 
   async getPatientData(patientId: string): Promise<Patient> {
-    const inMem = SHARED_DB.getPatient(patientId);
-    if (inMem) return inMem;
-
-    const local = await getLocalPatient(patientId);
-    if (local) return local;
-
     try {
       if (isConfigured()) {
         const { data, error } = await supabase
@@ -173,27 +167,25 @@ export const PatientService = {
       }
     } catch (e) {}
 
+    const inMem = SHARED_DB.getPatient(patientId);
+    if (inMem) return inMem;
+
+    const local = await getLocalPatient(patientId);
+    if (local) return local;
+
     const fallbackP: Patient = {
       id: patientId,
       name: 'Rihab KV',
-      email: 'rihab@mediqr.app',
-      blood_group: 'O+',
-      allergies: [
-        { name: 'Penicillin', severity: 'severe' },
-      ],
-      conditions: ['Asthma (Mild)'],
-      medications: ['Albuterol Inhaler (90mcg, As needed)'],
-      prescriptions: [{
-        name: 'Albuterol Inhaler',
-        dosage: '90mcg (As needed)',
-        date: '2026-02-15',
-        prescribing_doctor: 'Dr. Sarah Adams',
-        is_current: true
-      }],
+      email: 'kvrihab@gmail.com',
+      blood_group: 'A+',
+      allergies: [],
+      conditions: ['Color blindness'],
+      medications: [],
+      prescriptions: [],
       emergency_contact: {
-        name: 'Family Contact',
-        phone: '555-0199',
-        relation: 'Family'
+        name: 'Afnan',
+        phone: '+916282374857',
+        relation: 'Contact'
       },
       last_updated: new Date().toISOString(),
       data_source: 'self-reported'
@@ -275,36 +267,35 @@ export const PatientService = {
   },
 
   async getPendingRequests(patientId: string): Promise<AccessRequest[]> {
-    const localReqs = SHARED_DB.access_requests.filter(
+    try {
+      if (isConfigured()) {
+        const { data, error } = await supabase
+          .from('access_requests')
+          .select('*')
+          .eq('patient_id', patientId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false });
+
+        if (!error && data) {
+          return data;
+        }
+      }
+    } catch (e) {}
+
+    return SHARED_DB.access_requests.filter(
       r => r.patient_id === patientId && r.status === 'pending'
     );
-    if (localReqs.length > 0) return localReqs;
-
-    try {
-      if (!isConfigured()) return localReqs;
-      
-      const { data, error } = await supabase
-        .from('access_requests')
-        .select('*')
-        .eq('patient_id', patientId)
-        .eq('status', 'pending');
-
-      if (error) return localReqs;
-      return data || localReqs;
-    } catch (e) {
-      return localReqs;
-    }
   },
 
   subscribeToPendingRequests(patientId: string, callback: () => void): () => void {
     const unsubShared = SHARED_DB.subscribe(callback);
-    const interval = setInterval(callback, 1500);
+    const interval = setInterval(callback, 1000);
 
     let unsubSupabase = () => {};
     try {
       if (isConfigured()) {
         const channel = supabase.channel(`pending_reqs_${patientId}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'access_requests', filter: `patient_id=eq.${patientId}` }, 
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'access_requests' }, 
             () => callback()
           )
           .subscribe();
